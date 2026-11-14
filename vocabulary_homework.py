@@ -510,7 +510,7 @@ HOMEWORK_C1_TASKS = {
             {"text": "Sivistysmies", "correct": False},
             {"text": "Sivistysjoukko", "correct": False}
         ],
-        "tip": "📖 Суффиксы **-stö / -στö** образуют собирательные существительные (как *väestö*, *sivistyneistö*)."
+        "tip": "📖 Суффиксы **-stö / -stö** образуют собирательные существительные (как *väestö*, *sivistyneistö*)."
     },
     "task_5": {
         "title": "📚 Креативное ДЗ (C1, Премиум ⭐) — №5: Абсолютные конструкции",
@@ -581,7 +581,7 @@ HOMEWORK_C1_TASKS = {
 }
 
 # ==========================================
-# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ВЫБОРА ДЗ ПО УРОВНЯМ
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (ИСПРАВЛЯЮЩИЕ ОШИБКУ ИМПОРТА)
 # ==========================================
 def get_homework_by_level(level_code: str):
     """Автоматически выбирает случайное ДЗ для любого уровня (A1, A2, B1, B2, C1)."""
@@ -600,3 +600,22 @@ def get_homework_by_level(level_code: str):
         
     task_key = random.choice(list(pool.keys()))
     return task_key, pool[task_key]
+
+def get_random_homework_task(level_code: str):
+    """Возвращает случайное задание для указанного уровня (требуется в main.py)."""
+    return get_homework_by_level(level_code)
+
+def get_task_by_key(level_code: str, task_key: str):
+    """Возвращает конкретное задание по уровню и ключу (требуется в main.py)."""
+    level_code = level_code.lower()
+    if level_code == "c1":
+        pool = HOMEWORK_C1_TASKS
+    elif level_code == "b2":
+        pool = HOMEWORK_B2_TASKS
+    elif level_code == "b1":
+        pool = HOMEWORK_B1_TASKS
+    elif level_code == "a2":
+        pool = HOMEWORK_A2_TASKS
+    else:
+        pool = HOMEWORK_A1_TASKS
+    return pool.get(task_key)
