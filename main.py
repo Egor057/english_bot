@@ -1,30 +1,17 @@
+import os
 import asyncio
 import logging
 import sys
 import json
-import os
 import random
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
-# Импорты игровых модулей и словарей
-from vocabulary_detective import DETECTIVE_SCENARIOS
-from vocabulary_adventure import ADVENTURE_SCENARIOS
-from vocabulary_chat_sim import CHAT_SCENARIOS, FAIL_SCENARIOS, VICTORY_SCENARIOS
-
-from aiogram import Bot, Dispatcher, F, Router, html
-from aiogram.filters import Command, StateFilter, CommandStart, Filter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import (
-
-import os
+# === ВЕБ-ЗАГЛУШКА ДЛЯ RENDER (ОБЯЗАТЕЛЬНО В САМОМ ВЕРХУ) ===
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
-# Заглушка веб-сервера для Render, чтобы сервис не падал по таймауту портов
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -36,10 +23,21 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHandler)
     server.serve_forever()
 
-# Запускаем веб-сервер в фоновом режиме, чтобы Render видел открытый порт
 threading.Thread(target=run_server, daemon=True).start()
+# ==========================================================
 
-# --- Дальше идет твой стандартный код aiogram и запуска polling ---
+# Импорты игровых модулей и словарей
+from vocabulary_detective import DETECTIVE_SCENARIOS
+from vocabulary_adventure import ADVENTURE_SCENARIOS
+from vocabulary_chat_sim import CHAT_SCENARIOS, FAIL_SCENARIOS, VICTORY_SCENARIOS
+from vocabulary_homework import get_random_homework_task
+
+from aiogram import Bot, Dispatcher, F, Router, html
+from aiogram.filters import Command, StateFilter, CommandStart, Filter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import (
     Message,
     CallbackQuery,
     PreCheckoutQuery,
@@ -54,23 +52,18 @@ threading.Thread(target=run_server, daemon=True).start()
 )
 from aiogram.exceptions import TelegramAPIError
 
-from vocabulary_homework import get_random_homework_task, get_task_by_key
-
 # ==============================================================================
-# СОЗДАЕМ РОУТЕР (ДОЛЖЕН БЫТЬ В САМОМ НАЧАЛЕ ПЕРЕД ХЕНДЛЕРАМИ)
+# СОЗДАЕМ РОУТЕР
 # ==============================================================================
 router = Router()
 
-
 @router.message(F.text.in_(["📚 Домашнее задание", "/homework", "📝 ДЗ"]))
 async def handle_homework_request(message: Message) -> None:
-    # Получаем случайное задание из 10 доступных
     task_key, hw = get_random_homework_task()
     
     keyboard_buttons = []
     for opt in hw["options"]:
         marker = "1" if opt["correct"] else "0"
-        # Передаем ключ задания в callback, чтобы при желании можно было отслеживать прогресс
         keyboard_buttons.append([
             InlineKeyboardButton(text=opt["text"], callback_data=f"hw_ans:{marker}")
         ])
@@ -522,7 +515,7 @@ EXTENDED_GRAMMAR_DATABASE = {
 
 
 # ==============================================================================
-# КЛАВИАТУРЫ (С ДОБАВЛЕНИЕМ КНОПОК ИГР)
+# КЛАВИАТУРЫ
 # ==============================================================================
 def build_main_menu_keyboard(is_administrator: bool = False) -> ReplyKeyboardMarkup:
     rows = [
