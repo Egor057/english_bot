@@ -5,7 +5,7 @@ import json
 import os
 import random
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
 # === ВЕБ-ЗАГЛУШКА ДЛЯ RENDER (ОБЯЗАТЕЛЬНО В САМОМ ВЕРХУ) ===
@@ -429,7 +429,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("LanguageBotCore")
 
-BOT_TOKEN = "9136166835:AAFyiKv_mEdALdqv_jppx4iWbng37SRP-RQ"
+# ИСПРАВЛЕН ТОКЕН НА НОВЫЙ БОТ: t.me/English_StudyyyBot
+BOT_TOKEN = "9084719584:AAGuBzbaD9qtOEoR4Hw4Ok_eL9Miic35Nb4"
 ADMIN_TELEGRAM_ID = 9136166835
 
 DB_FILENAME = "users_database.json"
