@@ -1,11 +1,11 @@
-import os
 import asyncio
 import logging
 import sys
 import json
+import os
 import random
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Union
 
 # === ВЕБ-ЗАГЛУШКА ДЛЯ RENDER (ОБЯЗАТЕЛЬНО В САМОМ ВЕРХУ) ===
@@ -30,7 +30,6 @@ threading.Thread(target=run_server, daemon=True).start()
 from vocabulary_detective import DETECTIVE_SCENARIOS
 from vocabulary_adventure import ADVENTURE_SCENARIOS
 from vocabulary_chat_sim import CHAT_SCENARIOS, FAIL_SCENARIOS, VICTORY_SCENARIOS
-from vocabulary_homework import get_random_homework_task
 
 from aiogram import Bot, Dispatcher, F, Router, html
 from aiogram.filters import Command, StateFilter, CommandStart, Filter
@@ -51,6 +50,8 @@ from aiogram.types import (
     ChatMemberUpdated
 )
 from aiogram.exceptions import TelegramAPIError
+
+from vocabulary_homework import get_random_homework_task, get_task_by_key
 
 # ==============================================================================
 # СОЗДАЕМ РОУТЕР
