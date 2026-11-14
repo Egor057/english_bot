@@ -35,6 +35,12 @@ from aiogram.exceptions import TelegramAPIError
 
 from vocabulary_homework import get_random_homework_task, get_task_by_key
 
+# ==============================================================================
+# СОЗДАЕМ РОУТЕР (ДОЛЖЕН БЫТЬ В САМОМ НАЧАЛЕ ПЕРЕД ХЕНДЛЕРАМИ)
+# ==============================================================================
+router = Router()
+
+
 @router.message(F.text.in_(["📚 Домашнее задание", "/homework", "📝 ДЗ"]))
 async def handle_homework_request(message: Message) -> None:
     # Получаем случайное задание из 10 доступных
@@ -87,10 +93,6 @@ async def reload_homework_callback(callback: CallbackQuery) -> None:
         parse_mode="Markdown"
     )
     await callback.answer()
-# ==============================================================================
-# СОЗДАЕМ РОУТЕР (ДОЛЖЕН БЫТЬ В САМОМ НАЧАЛЕ ПЕРЕД ХЕНДЛЕРАМИ)
-# ==============================================================================
-router = Router()
 
 
 # ==============================================================================
