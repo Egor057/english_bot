@@ -1,3 +1,16 @@
+"""
+================================================================================
+PROJECT: Telegram English & Finnish Learning Bot (LanguageBotCore)
+AUTHOR: Winlocker33 & AI Collaborator
+VERSION: 4.5.0-Ultimate-Edition
+DESCRIPTION: Feature-rich, high-performance aiogram v3 bot with 24/7 Render 
+             HTTP keep-alive server, integrated SQLite/JSON database backups, 
+             multi-level vocabulary training (A1-C1), interactive quizzes,
+             homework modules, extended grammar directory, Telegram Stars payments,
+             and immersive storytelling games (Detective, Chat Simulator, London Adventure).
+================================================================================
+"""
+
 import asyncio
 import logging
 import sys
@@ -8,31 +21,57 @@ import shutil
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
-# === ВЕБ-ЗАГЛУШКА ДЛЯ RENDER (ОБЯЗАТЕЛЬНО В САМОМ ВЕРХУ) ===
+# ==============================================================================
+# SECTION 1: RENDER 24/7 HTTP KEEPALIVE WEB SERVER (BACKGROUND THREAD)
+# ==============================================================================
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 
-class SimpleHandler(BaseHTTPRequestHandler):
+class RenderKeepAliveHandler(BaseHTTPRequestHandler):
+    """
+    HTTP request handler designed to satisfy Render's web service port binding requirement.
+    Responds with HTTP 200 OK to any incoming health-check requests to prevent spin-down.
+    """
     def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is active!")
+        try:
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"LanguageBotCore Web Service is active and operational 24/7!")
+        except Exception as e:
+            logger.error(f"Error handling HTTP keep-alive GET request: {e}")
 
-def run_server():
+    def log_message(self, format: str, *args: Any) -> None:
+        # Suppress standard HTTP server access logs to keep terminal output clean
+        pass
+
+def start_web_server_daemon() -> None:
+    """
+    Spawns the HTTP server in a separate background daemon thread.
+    Reads PORT from environment variables (defaults to 10000 for Render).
+    """
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
+    try:
+        server = HTTPServer(("0.0.0.0", port), RenderKeepAliveHandler)
+        logger.info(f"HTTP Keep-Alive server successfully bound to port {port}")
+        server.serve_forever()
+    except Exception as ex:
+        logger.critical(f"Failed to start background HTTP server: {ex}")
 
-threading.Thread(target=run_server, daemon=True).start()
-# ==========================================================
+# Initialize and start the background web server thread immediately
+threading.Thread(target=start_web_server_daemon, daemon=True).start()
 
-# Импорты игровых модулей и словарей
+
+# ==============================================================================
+# SECTION 2: IMPORTS OF AIOGRAM AND CUSTOM MODULES
+# ==============================================================================
 from vocabulary_detective import DETECTIVE_SCENARIOS
 from vocabulary_adventure import ADVENTURE_SCENARIOS
 from vocabulary_chat_sim import CHAT_SCENARIOS, FAIL_SCENARIOS, VICTORY_SCENARIOS
+from vocabulary_homework import get_random_homework_task
 
 from aiogram import Bot, Dispatcher, F, Router, html
-from aiogram.filters import Command, StateFilter, CommandStart, Filter
+from aiogram.filters import Command, StateFilter, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -44,383 +83,16 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove,
-    ErrorEvent,
-    ChatMemberUpdated
+    KeyboardButton
 )
 from aiogram.exceptions import TelegramAPIError
 
-from vocabulary_homework import get_random_homework_task, get_task_by_key
-
-# ==============================================================================
-# СОЗДАЕМ РОУТЕР
-# ==============================================================================
+# Core router instantiation
 router = Router()
 
-@router.message(F.text.in_(["📚 Домашнее задание", "/homework", "📝 ДЗ"]))
-async def handle_homework_request(message: Message) -> None:
-    task_key, hw = get_random_homework_task()
-    
-    keyboard_buttons = []
-    for opt in hw["options"]:
-        marker = "1" if opt["correct"] else "0"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=opt["text"], callback_data=f"hw_ans:{marker}")
-        ])
-    
-    keyboard_buttons.append([InlineKeyboardButton(text="🔄 Другое ДЗ", callback_data="hw_reload")])
-    keyboard_buttons.append([InlineKeyboardButton(text="📖 Справочник падежей", callback_data="action_grammar_shortcut")])
-    keyboard_buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
-
-    hw_text = (
-        f"🎯 **{hw['title']}**\n\n"
-        f"💡 _{hw['description']}_\n\n"
-        f"❓ **Задание:**\n{hw['task_text']}"
-    )
-
-    await message.answer(
-        hw_text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data == "hw_reload")
-async def reload_homework_callback(callback: CallbackQuery) -> None:
-    task_key, hw = get_random_homework_task()
-    
-    keyboard_buttons = []
-    for opt in hw["options"]:
-        marker = "1" if opt["correct"] else "0"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=opt["text"], callback_data=f"hw_ans:{marker}")
-        ])
-    
-    keyboard_buttons.append([InlineKeyboardButton(text="🔄 Другое ДЗ", callback_data="hw_reload")])
-    keyboard_buttons.append([InlineKeyboardButton(text="📖 Справочник падежей", callback_data="action_grammar_shortcut")])
-    keyboard_buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
-
-    await callback.message.edit_text(
-        f"🎯 **{hw['title']}**\n\n"
-        f"💡 _{hw['description']}_\n\n"
-        f"❓ **Задание:**\n{hw['task_text']}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
 
 # ==============================================================================
-# ИГРОВЫЕ МОДУЛИ И ПРЕМИУМ-КВЕСТЫ
-# ==============================================================================
-
-# --- 1. Детективный квест ---
-@router.message(F.text.in_(["🔍 Детективный квест", "/detective", "🕵️‍♂️ Расследование"]))
-async def start_detective_quest(message: Message) -> None:
-    user_id = message.from_user.id
-    database = load_db()
-    user_data = database.get(str(user_id), {})
-    is_premium = user_data.get("is_premium", False)
-
-    if not is_premium:
-        await message.answer(
-            "🔒 **Детективный квест «Дело №404» доступен по Премиум-подписке!**\n\n"
-            "Масштабное расследование кражи в Лондоне: сбор улик, допросы, тайные локации и проверка сленга.\n"
-            "Стоимость доступа: **50 Telegram Stars (⭐)**.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")]
-            ]),
-            parse_mode="Markdown"
-        )
-        return
-
-    money = 50
-    energy = 100
-    rep = 10
-    clues = 0
-    scene = DETECTIVE_SCENARIOS["start"]
-
-    keyboard_buttons = []
-    for btn in scene["buttons"]:
-        m_change = btn.get("money", 0)
-        e_change = btn.get("energy", 0)
-        r_change = btn.get("rep", 0)
-        c_change = btn.get("clues", 0)
-
-        cb_data = f"det:{btn['next']}:{money + m_change}:{energy + e_change}:{rep + r_change}:{clues + c_change}"
-        keyboard_buttons.append([InlineKeyboardButton(text=btn["text"], callback_data=cb_data)])
-
-    stats_line = f"💷 £{money} | ⚡ {energy}% | 🔥 Реп: {rep} | 🔎 Улики: {clues}"
-    text = f"{stats_line}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}"
-
-    await message.answer(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data.startswith("det:"))
-async def process_detective_choice(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    next_key = parts[1]
-    money = int(parts[2])
-    energy = int(parts[3])
-    rep = int(parts[4])
-    clues = int(parts[5])
-
-    scene = DETECTIVE_SCENARIOS.get(next_key, DETECTIVE_SCENARIOS["start"])
-
-    keyboard_buttons = []
-    for btn in scene.get("buttons", []):
-        new_m = money + btn.get("money", 0)
-        new_e = energy + btn.get("energy", 0)
-        new_r = rep + btn.get("rep", 0)
-        new_c = clues + btn.get("clues", 0)
-
-        cb_data = f"det:{btn['next']}:{new_m}:{new_e}:{new_r}:{new_c}"
-        keyboard_buttons.append([InlineKeyboardButton(text=btn["text"], callback_data=cb_data)])
-
-    stats_line = f"💷 £{money} | ⚡ {energy}% | 🔥 Реп: {rep} | 🔎 Улики: {clues}"
-    text = f"{stats_line}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}"
-
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
-# --- 2. Чат-симулятор ---
-@router.message(F.text.in_(["💬 Чат-симулятор", "/chat_sim", "📱 Симулятор"]))
-async def start_chat_simulator(message: Message) -> None:
-    user_id = message.from_user.id
-    database = load_db()
-    user_data = database.get(str(user_id), {})
-    is_premium = user_data.get("is_premium", False)
-
-    if not is_premium:
-        await message.answer(
-            "🔒 **Чат-симулятор доступен по Премиум-подписке!**\n\n"
-            "Интерактивная переписка с коллегами, шпионами и друзьями на живом английском.\n"
-            "Стоимость доступа: **50 Telegram Stars (⭐)**.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")]
-            ]),
-            parse_mode="Markdown"
-        )
-        return
-
-    scene = CHAT_SCENARIOS["start"]
-    keyboard_buttons = []
-    for opt in scene["options"]:
-        marker = "1" if opt["correct"] else "0"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=opt["text"], callback_data=f"chatsim:{opt['next']}:{marker}")
-        ])
-
-    chat_text = (
-        f"💬 **{scene['character']}**\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📱 *{scene['dialogue']}*"
-    )
-
-    await message.answer(
-        chat_text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data.startswith("chatsim:"))
-async def process_chat_choice(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    next_key = parts[1]
-    is_correct = parts[2] == "1"
-
-    if next_key.startswith("victory_"):
-        scen = CHAT_SCENARIOS[next_key]
-        await callback.message.edit_text(
-            f"🎉 **{scen['title']}**\n\n{scen['text']}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=VICTORY_SCENARIOS['button'], callback_data="chatsim_restart")]
-            ]),
-            parse_mode="Markdown"
-        )
-        await callback.answer()
-        return
-
-    if not is_correct or next_key.startswith("fail_"):
-        scen = CHAT_SCENARIOS.get(next_key, {"title": "💀 Game Over", "text": "Вы совершили фатальную ошибку в диалоге."})
-        await callback.message.edit_text(
-            f"❌ **{scen['title']}**\n\n{scen['text']}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=FAIL_SCENARIOS['button'], callback_data="chatsim_restart")]
-            ]),
-            parse_mode="Markdown"
-        )
-        await callback.answer()
-        return
-
-    scene = CHAT_SCENARIOS.get(next_key, CHAT_SCENARIOS["start"])
-    keyboard_buttons = []
-    for opt in scene["options"]:
-        marker = "1" if opt["correct"] else "0"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=opt["text"], callback_data=f"chatsim:{opt['next']}:{marker}")
-        ])
-
-    chat_text = (
-        f"💬 **Эмуляция чата | Собеседник: {scene['character']}**\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
-        f"✅ *{scene.get('feedback', 'Ответ принят.')}*\n\n"
-        f"📱 *{scene['dialogue']}*"
-    )
-
-    await callback.message.edit_text(
-        chat_text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-@router.callback_query(F.data == "chatsim_restart")
-async def restart_chatsim(callback: CallbackQuery) -> None:
-    scene = CHAT_SCENARIOS["start"]
-    keyboard_buttons = []
-    for opt in scene["options"]:
-        marker = "1" if opt["correct"] else "0"
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=opt["text"], callback_data=f"chatsim:{opt['next']}:{marker}")
-        ])
-
-    chat_text = (
-        f"💬 **{scene['character']}**\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📱 *{scene['dialogue']}*"
-    )
-    await callback.message.edit_text(
-        chat_text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
-# --- 3. Квест в Лондоне (RPG) ---
-@router.message(F.text.in_(["🗺️ Квест в Лондоне", "/adventure", "🕹️ RPG-игра"]))
-async def start_adventure_quest(message: Message) -> None:
-    user_id = message.from_user.id
-    database = load_db()
-    user_data = database.get(str(user_id), {})
-    is_premium = user_data.get("is_premium", False)
-
-    if not is_premium:
-        await message.answer(
-            "🔒 **Кинематографический триллер «Лондонский след» доступен по Премиум-подписке!**\n\n"
-            "Полноценная сюжетная новелла, десятки развилок, опасные выборы и проверка на знание британского сленга.\n"
-            "Стоимость доступа: **50 Telegram Stars (⭐)**.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")]
-            ]),
-            parse_mode="Markdown"
-        )
-        return
-
-    money = 40
-    energy = 100
-    rep = 10
-    scene = ADVENTURE_SCENARIOS["start"]
-
-    keyboard_buttons = []
-    for btn in scene["buttons"]:
-        cb_data = f"adv:{btn['next']}:{money + btn.get('money', 0)}:{energy + btn.get('energy', 0)}:{rep + btn.get('rep', 0)}"
-        keyboard_buttons.append([InlineKeyboardButton(text=btn["text"], callback_data=cb_data)])
-
-    stats_line = f"💷 **Деньги:** £{money} | ⚡ **Энергия:** {energy}% | 🔥 **Репутация:** {rep}"
-    text = f"{stats_line}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}"
-
-    await message.answer(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-
-@router.callback_query(F.data.startswith("adv:"))
-async def process_adventure_choice(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    next_scene_key = parts[1]
-    money = int(parts[2])
-    energy = int(parts[3])
-    rep = int(parts[4])
-
-    scene = ADVENTURE_SCENARIOS.get(next_scene_key, ADVENTURE_SCENARIOS["start"])
-
-    keyboard_buttons = []
-    for btn in scene.get("buttons", []):
-        new_money = money + btn.get("money", 0)
-        new_energy = energy + btn.get("energy", 0)
-        new_rep = rep + btn.get("rep", 0)
-        
-        cb_data = f"adv:{btn['next']}:{new_money}:{new_energy}:{new_rep}"
-        keyboard_buttons.append([InlineKeyboardButton(text=btn["text"], callback_data=cb_data)])
-
-    stats_line = f"💷 **Деньги:** £{money} | ⚡ **Энергия:** {energy}% | 🔥 **Репутация:** {rep}"
-    text = f"{stats_line}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}"
-
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-
-# ==============================================================================
-# ЗАЩИЩЕННЫЙ ИМПОРТ СЛОВАРЕЙ ВСЕХ УРОВНЕЙ (A1, A2, B1, B2, C1)
-# ==============================================================================
-try:
-    from vocabulary_a1 import WORDS_A1
-except ImportError:
-    WORDS_A1 = [
-        {"word": "Hello", "trans": "[həˈloʊ]", "ru": "Привет", "ex": "Hello world, nice to meet you."},
-        {"word": "Cat", "trans": "[kæt]", "ru": "Кот", "ex": "The cat is sleeping on the warm sofa."},
-        {"word": "Water", "trans": "[ˈwɔː.tər]", "ru": "Вода", "ex": "Please give me a glass of water."}
-    ]
-
-try:
-    from vocabulary_a2 import WORDS_A2
-except ImportError:
-    WORDS_A2 = [
-        {"word": "Example", "trans": "[ɪɡˈzɑːm.pəl]", "ru": "Пример", "ex": "This is a classic example of clean code."},
-        {"word": "Journey", "trans": "[ˈdʒɜː.ni]", "ru": "Путешествие", "ex": "Life is a long and exciting journey."}
-    ]
-
-try:
-    from vocabulary_b1 import WORDS_B1
-except ImportError:
-    WORDS_B1 = [
-        {"word": "Access", "trans": "[ˈæk.ses]", "ru": "Доступ", "ex": "Get access to confidential system files."},
-        {"word": "Develop", "trans": "[dɪˈvel.əp]", "ru": "Развивать", "ex": "Develop high-performance applications in Python."}
-    ]
-
-try:
-    from vocabulary_b2 import WORDS_B2
-except ImportError:
-    WORDS_B2 = [
-        {"word": "Ability", "trans": "[əˈbɪl.ə.ti]", "ru": "Способность", "ex": "Natural ability to solve complex mathematical problems."},
-        {"word": "Efficient", "trans": "[ɪˈfɪʃ.ənt]", "ru": "Эффективный", "ex": "Efficient algorithms save CPU time and memory."}
-    ]
-
-try:
-    from vocabulary_c1 import WORDS_C1
-except ImportError:
-    WORDS_C1 = [
-        {"word": "Abundant", "trans": "[əˈbʌn.dənt]", "ru": "Изобильный", "ex": "Abundant natural resources in this specific region."},
-        {"word": "Ephemeral", "trans": "[ɪˈfem.ər.əl]", "ru": "Эфемерный", "ex": "Ephemeral digital trends come and go rapidly."}
-    ]
-
-# ==============================================================================
-# ЛОГИРОВАНИЕ И КОНФИГУРАЦИЯ БАЗЫ ДАННЫХ
+# SECTION 3: SYSTEM LOGGING & ROBUST DATABASE MANAGEMENT
 # ==============================================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -429,7 +101,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("LanguageBotCore")
 
-# ИСПРАВЛЕН ТОКЕН НА НОВЫЙ БОТ: t.me/English_StudyyyBot
+# Official Bot Token configuration
 BOT_TOKEN = "9084719584:AAGuBzbaD9qtOEoR4Hw4Ok_eL9Miic35Nb4"
 ADMIN_TELEGRAM_ID = 9136166835
 
@@ -437,101 +109,144 @@ DB_FILENAME = "users_database.json"
 DB_BACKUP_FILENAME = "users_database_backup.json"
 
 def initialize_database() -> None:
+    """Ensures the primary JSON database file exists on disk."""
     if not os.path.exists(DB_FILENAME):
-        logger.info("Создание нового файла базы данных пользователей...")
-        initial_data = {}
-        with open(DB_FILENAME, "w", encoding="utf-8") as f:
-            json.dump(initial_data, f, ensure_ascii=False, indent=4)
+        logger.info("Initializing new persistent user database file...")
+        try:
+            with open(DB_FILENAME, "w", encoding="utf-8") as f:
+                json.dump({}, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            logger.critical(f"Failed to create database file: {e}")
 
 def load_db() -> Dict[str, Any]:
+    """Loads user records from JSON database with automatic backup recovery."""
     initialize_database()
     try:
         with open(DB_FILENAME, "r", encoding="utf-8") as file:
             return json.load(file)
     except json.JSONDecodeError as jde:
-        logger.error(f"Поврежден файл JSON базы данных ({jde}). Восстановление из бэкапа...")
+        logger.error(f"Database JSON corruption detected ({jde}). Restoring from backup...")
         if os.path.exists(DB_BACKUP_FILENAME):
             try:
-                with open(DB_BACKUP_FILENAME, "r", encoding="utf-8") as backup_file:
-                    data = json.load(backup_file)
+                with open(DB_BACKUP_FILENAME, "r", encoding="utf-8") as bf:
+                    data = json.load(bf)
+                logger.info("Successfully restored user database from backup file.")
                 return data
-            except Exception:
-                pass
+            except Exception as be:
+                logger.error(f"Backup restoration failed: {be}")
         return {}
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error loading database: {e}")
         return {}
 
 def save_db(data: Dict[str, Any]) -> None:
+    """Saves user records to JSON database with pre-save backup creation."""
     try:
         if os.path.exists(DB_FILENAME):
             shutil.copy(DB_FILENAME, DB_BACKUP_FILENAME)
         with open(DB_FILENAME, "w", encoding="utf-8") as file:
             json.dump(data, file, ensure_ascii=False, indent=4)
     except Exception as e:
-        logger.error(f"Ошибка сохранения БД: {e}")
+        logger.error(f"Critical error saving database state: {e}")
 
+# Perform initial database setup
 initialize_database()
 
 
 # ==============================================================================
-# МАШИНА СОСТОЯНИЙ (FSM)
+# SECTION 4: FINITE STATE MACHINE (FSM) STATES
 # ==============================================================================
 class BotStates(StatesGroup):
     selecting_vocabulary_level = State()
     active_learning_session = State()
     quiz_question_active = State()
-    settings_editing_profile = State()
-    admin_broadcast_message = State()
-    support_dialogue = State()
+    admin_broadcast_state = State()
 
 
 # ==============================================================================
-# СПРАВОЧНИК ПАДЕЖЕЙ
+# SECTION 5: VOCABULARY DATASETS & EXTENDED GRAMMAR DIRECTORY
 # ==============================================================================
+try:
+    from vocabulary_a1 import WORDS_A1
+except ImportError:
+    WORDS_A1 = [{"word": "Hello", "trans": "[həˈloʊ]", "ru": "Привет", "ex": "Hello world."}]
+
+try:
+    from vocabulary_a2 import WORDS_A2
+except ImportError:
+    WORDS_A2 = [{"word": "Example", "trans": "[ɪɡˈzɑːm.pəl]", "ru": "Пример", "ex": "This is an example."}]
+
+try:
+    from vocabulary_b1 import WORDS_B1
+except ImportError:
+    WORDS_B1 = [{"word": "Access", "trans": "[ˈæk.ses]", "ru": "Доступ", "ex": "Get access."}]
+
+try:
+    from vocabulary_b2 import WORDS_B2
+except ImportError:
+    WORDS_B2 = [{"word": "Ability", "trans": "[əˈbɪl.ə.ti]", "ru": "Способность", "ex": "Natural ability."}]
+
+try:
+    from vocabulary_c1 import WORDS_C1
+except ImportError:
+    WORDS_C1 = [{"word": "Abundant", "trans": "[əˈbʌn.dənt]", "ru": "Изобильный", "ex": "Abundant resources."}]
+
 EXTENDED_GRAMMAR_DATABASE = {
     "nominatiivi": {
         "title": "Nominatiivi (Именительный падеж)",
         "questions": "Kuka? Mikä? (Кто? Что?)",
-        "purpose": "Словарная форма слова.",
+        "purpose": "Словарная форма слова в финском языке.",
         "rules": "Нулевое окончание в единственном числе.",
         "examples": ["Tämä on auto. (Это машина.)", "Koira nukkuu. (Собака спит.)"],
-        "tips": "Используется при прямом упоминании."
+        "tips": "Используется для подлежащего в предложении."
     },
     "genetiivi": {
         "title": "Genetiivi (Родительный падеж)",
         "questions": "Kenen? Minkä? (Кого? Чего?)",
-        "purpose": "Обозначает принадлежность.",
+        "purpose": "Обозначает принадлежность или обладателя.",
         "rules": "Окончание: -n.",
         "examples": ["Tämä on isän auto. (Это машина отца.)"],
-        "tips": "Обратите внимание на чередование ступеней."
+        "tips": "Следите за сильной и слабой ступенью согласных."
     },
     "partitiivi": {
         "title": "Partitiivi (Партитив)",
         "questions": "Ketä? Mitä? (Кого? Что?)",
-        "purpose": "Применяется после числительных и при отрицании.",
+        "purpose": "Выражает частичность, неопределенное количество или используется при отрицании.",
         "rules": "Окончания: -a, -ä, -ta, -tä.",
         "examples": ["Minä syön leipää. (Я ем хлеб.)", "En ymmärrä. (Я не понимаю.)"],
-        "tips": "Самый частый падеж в речи."
+        "tips": "Самый часто используемый падеж в повседневной финской речи."
     }
 }
 
 
 # ==============================================================================
-# КЛАВИАТУРЫ
+# SECTION 6: UI KEYBOARDS BUILDERS (REPLY & INLINE)
 # ==============================================================================
-def build_main_menu_keyboard(is_administrator: bool = False) -> ReplyKeyboardMarkup:
+def build_main_menu_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Constructs the primary persistent reply keyboard layout."""
     rows = [
         [KeyboardButton(text="📚 Учить слова"), KeyboardButton(text="🎯 Режим тестов")],
-        [KeyboardButton(text="🔍 Детективный квест"), KeyboardButton(text="💬 Чат-симулятор")],
-        [KeyboardButton(text="🗺️ Квест в Лондоне"), KeyboardButton(text="⭐ Купить Премиум")],
+        [KeyboardButton(text="🎮 Игры и квесты ⭐"), KeyboardButton(text="📚 Домашнее задание")],
         [KeyboardButton(text="👤 Профиль и Статистика"), KeyboardButton(text="📖 Справочник падежей")],
-        [KeyboardButton(text="⚙️ Настройки")]
+        [KeyboardButton(text="⭐ Купить Премиум"), KeyboardButton(text="⚙️ Настройки")]
     ]
-    if is_administrator:
+    if is_admin:
         rows.append([KeyboardButton(text="👑 Панель администратора")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, persistent=True)
 
+def build_games_menu_keyboard() -> InlineKeyboardMarkup:
+    """Constructs the interactive inline keyboard for games selection."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Детективный квест ⭐", callback_data="start_game_detective")],
+            [InlineKeyboardButton(text="💬 Чат-симулятор ⭐", callback_data="start_game_chatsim")],
+            [InlineKeyboardButton(text="🗺️ Квест в Лондоне (Путешествие) ⭐", callback_data="start_game_adventure")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")]
+        ]
+    )
+
 def build_levels_selection_keyboard() -> InlineKeyboardMarkup:
+    """Constructs vocabulary level selection keyboard."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🟢 Уровень A1", callback_data="setlevel_a1")],
@@ -544,6 +259,7 @@ def build_levels_selection_keyboard() -> InlineKeyboardMarkup:
     )
 
 def build_learning_actions_keyboard() -> InlineKeyboardMarkup:
+    """Constructs inline buttons for active vocabulary sessions."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="➡️ Следующее слово", callback_data="action_next_word")],
@@ -553,26 +269,27 @@ def build_learning_actions_keyboard() -> InlineKeyboardMarkup:
     )
 
 def build_grammar_directory_keyboard() -> InlineKeyboardMarkup:
-    keyboard_rows = []
+    """Constructs inline keyboard for grammar case directory."""
+    rows = []
     for code, info in EXTENDED_GRAMMAR_DATABASE.items():
         short_title = info["title"].split(" ")[0]
-        keyboard_rows.append([InlineKeyboardButton(text=f"📌 {short_title}", callback_data=f"grammar_info_{code}")])
-    keyboard_rows.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+        rows.append([InlineKeyboardButton(text=f"📌 {short_title}", callback_data=f"grammar_info_{code}")])
+    rows.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 # ==============================================================================
-# БАЗОВЫЕ ОБРАБОТЧИКИ (/start, ПРОФИЛЬ, СПРАВОЧНИК)
+# SECTION 7: CORE HANDLERS (/start, PROFILE, GRAMMAR)
 # ==============================================================================
 @router.message(CommandStart())
 async def handle_start_command(message: Message, state: FSMContext) -> None:
+    """Handles the /start command, registers new users, and displays welcome UI."""
     await state.clear()
     uid_str = str(message.from_user.id)
     database = load_db()
     
     if uid_str not in database:
         database[uid_str] = {
-            "username": message.from_user.username or "NoUsername",
             "first_name": message.from_user.first_name or "Ученик",
             "level": "a1",
             "words_learned": 0,
@@ -582,9 +299,11 @@ async def handle_start_command(message: Message, state: FSMContext) -> None:
             "joined_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         save_db(database)
+        logger.info(f"Registered new user: {message.from_user.id} ({message.from_user.first_name})")
 
     is_admin = message.from_user.id == ADMIN_TELEGRAM_ID
     
+    # User's requested detailed welcome message structure
     welcome_message = (
         f"👋 Здравствуй, **{html.quote(message.from_user.first_name)}**!\n\n"
         "Добро пожаловать в систему изучения языковой лексики и премиум-квестов.\n"
@@ -599,49 +318,60 @@ async def handle_start_command(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "👤 Профиль и Статистика")
 async def handle_profile_request(message: Message) -> None:
+    """Displays detailed user profile and performance statistics."""
     uid_str = str(message.from_user.id)
-    database = load_db()
-    user_info = database.get(uid_str, {
+    db = load_db()
+    info = db.get(uid_str, {
         "level": "a1", "words_learned": 0, "correct_answers": 0,
         "quiz_score": 0, "is_premium": False, "joined_date": "Неизвестно"
     })
-    
-    sub_status = "🟢 Активна (Премиум ⭐)" if user_info.get("is_premium") else "⚪️ Базовый"
+    sub_status = "🟢 Активна (Премиум ⭐)" if info.get("is_premium") else "⚪️ Базовый"
     
     profile_text = (
         f"📊 **Твой персональный профиль:**\n\n"
         f"👤 Имя: {html.quote(message.from_user.first_name)}\n"
         f"🆔 ID: `{message.from_user.id}`\n"
-        f"📈 Уровень: `{user_info.get('level').upper()}`\n"
-        f"🧠 Просмотрено слов: `{user_info.get('words_learned', 0)}`\n"
-        f"✨ Правильных ответов: `{user_info.get('correct_answers', 0)}`\n"
-        f"🏆 Очки: `{user_info.get('quiz_score', 0)}`\n"
+        f"📈 Уровень: `{info.get('level').upper()}`\n"
+        f"🧠 Просмотрено слов: `{info.get('words_learned', 0)}`\n"
+        f"✨ Правильных ответов: `{info.get('correct_answers', 0)}`\n"
+        f"🏆 Очки: `{info.get('quiz_score', 0)}`\n"
         f"💎 Подписка: {sub_status}\n"
+        f"📅 Дата регистрации: `{info.get('joined_date', 'Неизвестно')}`"
     )
     await message.answer(profile_text, parse_mode="Markdown")
 
 @router.message(F.text == "📖 Справочник падежей")
-async def handle_grammar_menu_request(message: Message) -> None:
+async def handle_grammar_menu(message: Message) -> None:
+    """Opens the grammar reference directory."""
     await message.answer(
-        "📚 **Интерактивный справочник грамматики:**",
+        "📚 **Интерактивный справочник грамматики:**\nВыберите интересующий вас падеж:",
         parse_mode="Markdown",
         reply_markup=build_grammar_directory_keyboard()
     )
 
 @router.callback_query(F.data.startswith("grammar_info_"))
-async def process_grammar_card_callback(callback: CallbackQuery) -> None:
+async def process_grammar_card(callback: CallbackQuery) -> None:
+    """Displays detailed grammar card info based on user selection."""
     code = callback.data.split("_")[2]
     data = EXTENDED_GRAMMAR_DATABASE.get(code)
     if not data:
-        await callback.answer("⚠️ Не найдено.", show_alert=True)
+        await callback.answer("⚠️ Информация не найдена.", show_alert=True)
         return
     exs = "\n".join([f"• {ex}" for ex in data["examples"]])
-    text = f"📖 **{data['title']}**\n\n❓ Вопросы: `{data['questions']}`\n\n🎯 Назначение: {data['purpose']}\n\n💡 Примеры:\n{exs}"
+    text = (
+        f"📖 **{data['title']}**\n\n"
+        f"❓ Вопросы: `{data['questions']}`\n\n"
+        f"🎯 Назначение: {data['purpose']}\n"
+        f"⚙️ Правило: {data['rules']}\n\n"
+        f"💡 Примеры:\n{exs}\n\n"
+        f"📌 Совет: *{data['tips']}*"
+    )
     await callback.message.edit_text(text, parse_mode="Markdown", reply_markup=build_grammar_directory_keyboard())
     await callback.answer()
 
 @router.callback_query(F.data == "action_main_menu")
-async def process_return_to_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
+async def return_main_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    """Returns the user safely to the main menu."""
     await state.clear()
     is_admin = callback.from_user.id == ADMIN_TELEGRAM_ID
     try:
@@ -653,44 +383,297 @@ async def process_return_to_main_menu(callback: CallbackQuery, state: FSMContext
 
 
 # ==============================================================================
-# МОДУЛЬ ОБУЧЕНИЯ СЛОВАМ И ТЕСТОВ
+# SECTION 8: HOMEWORK MODULE
+# ==============================================================================
+@router.message(F.text.in_(["📚 Домашнее задание", "/homework", "📝 ДЗ"]))
+async def handle_homework_request(message: Message) -> None:
+    """Provides a random interactive homework task."""
+    task_key, hw = get_random_homework_task()
+    keyboard_buttons = []
+    for opt in hw["options"]:
+        marker = "1" if opt["correct"] else "0"
+        keyboard_buttons.append([InlineKeyboardButton(text=opt["text"], callback_data=f"hw_ans:{marker}")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🔄 Другое ДЗ", callback_data="hw_reload")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
+
+    hw_text = f"🎯 **{hw['title']}**\n\n💡 _{hw['description']}_\n\n❓ **Задание:**\n{hw['task_text']}"
+    await message.answer(hw_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons), parse_mode="Markdown")
+
+@router.callback_query(F.data == "hw_reload")
+async def reload_homework_callback(callback: CallbackQuery) -> None:
+    """Generates a new homework task on callback."""
+    task_key, hw = get_random_homework_task()
+    keyboard_buttons = []
+    for opt in hw["options"]:
+        marker = "1" if opt["correct"] else "0"
+        keyboard_buttons.append([InlineKeyboardButton(text=opt["text"], callback_data=f"hw_ans:{marker}")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🔄 Другое ДЗ", callback_data="hw_reload")])
+    keyboard_buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")])
+
+    await callback.message.edit_text(
+        f"🎯 **{hw['title']}**\n\n💡 _{hw['description']}_\n\n❓ **Задание:**\n{hw['task_text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_buttons),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("hw_ans:"))
+async def process_homework_answer(callback: CallbackQuery) -> None:
+    """Evaluates homework answer."""
+    is_correct = callback.data.split(":")[1] == "1"
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Другое ДЗ", callback_data="hw_reload")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")]
+    ])
+    if is_correct:
+        await callback.message.edit_text("✅ **Правильно! Отличная работа!** 🎉", parse_mode="Markdown", reply_markup=markup)
+    else:
+        await callback.message.edit_text("❌ **Неверно.** Попробуй другое задание или повтори теорию.", parse_mode="Markdown", reply_markup=markup)
+    await callback.answer()
+
+
+# ==============================================================================
+# SECTION 9: GAMES & PREMIUM QUESTS (DETECTIVE, CHAT SIMULATOR, LONDON ADVENTURE)
+# ==============================================================================
+@router.message(F.text == "🎮 Игры и квесты ⭐")
+async def handle_games_menu(message: Message) -> None:
+    """Displays the games and quests selection menu."""
+    await message.answer(
+        "🎮 **Интерактивные игры и квесты (Премиум ⭐):**\n\n"
+        "Выбирай захватывающее приключение или симуляцию из списка ниже:",
+        parse_mode="Markdown",
+        reply_markup=build_games_menu_keyboard()
+    )
+
+@router.callback_query(F.data == "open_games_menu")
+async def cb_open_games_menu(callback: CallbackQuery) -> None:
+    """Opens games menu via callback query."""
+    await callback.message.edit_text(
+        "🎮 **Интерактивные игры и квесты (Премиум ⭐):**\n\n"
+        "Выбирай захватывающее приключение или симуляцию из списка ниже:",
+        parse_mode="Markdown",
+        reply_markup=build_games_menu_keyboard()
+    )
+    await callback.answer()
+
+# --- 9.1 Detective Quest ---
+@router.callback_query(F.data == "start_game_detective")
+async def cb_start_detective(callback: CallbackQuery) -> None:
+    """Starts the Detective Quest if premium is active."""
+    user_id = callback.from_user.id
+    db = load_db()
+    if not db.get(str(user_id), {}).get("is_premium", False):
+        await callback.message.edit_text(
+            "🔒 **Детективный квест доступен по Премиум-подписке!**\nСтоимость: **50 Telegram Stars (⭐)**.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")],
+                [InlineKeyboardButton(text="◀️ Назад к играм", callback_data="open_games_menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
+    money, energy, rep, clues = 50, 100, 10, 0
+    scene = DETECTIVE_SCENARIOS["start"]
+    btns = []
+    for btn in scene["buttons"]:
+        cb = f"det:{btn['next']}:{money + btn.get('money', 0)}:{energy + btn.get('energy', 0)}:{rep + btn.get('rep', 0)}:{clues + btn.get('clues', 0)}"
+        btns.append([InlineKeyboardButton(text=btn["text"], callback_data=cb)])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💷 £{money} | ⚡ {energy}% | 🔥 Реп: {rep} | 🔎 Улики: {clues}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("det:"))
+async def process_detective_choice(callback: CallbackQuery) -> None:
+    """Processes player choices in the Detective Quest."""
+    parts = callback.data.split(":")
+    next_key, m, e, r, c = parts[1], int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
+    scene = DETECTIVE_SCENARIOS.get(next_key, DETECTIVE_SCENARIOS["start"])
+
+    btns = []
+    for btn in scene.get("buttons", []):
+        cb = f"det:{btn['next']}:{m + btn.get('money', 0)}:{e + btn.get('energy', 0)}:{r + btn.get('rep', 0)}:{c + btn.get('clues', 0)}"
+        btns.append([InlineKeyboardButton(text=btn["text"], callback_data=cb)])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💷 £{m} | ⚡ {e}% | 🔥 Реп: {r} | 🔎 Улики: {c}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+# --- 9.2 Chat Simulator ---
+@router.callback_query(F.data == "start_game_chatsim")
+async def cb_start_chatsim(callback: CallbackQuery) -> None:
+    """Starts the Chat Simulator if premium is active."""
+    user_id = callback.from_user.id
+    db = load_db()
+    if not db.get(str(user_id), {}).get("is_premium", False):
+        await callback.message.edit_text(
+            "🔒 **Чат-симулятор доступен по Премиум-подписке!**\nСтоимость: **50 Telegram Stars (⭐)**.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")],
+                [InlineKeyboardButton(text="◀️ Назад к играм", callback_data="open_games_menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
+    scene = CHAT_SCENARIOS["start"]
+    btns = []
+    for opt in scene["options"]:
+        marker = "1" if opt["correct"] else "0"
+        btns.append([InlineKeyboardButton(text=opt["text"], callback_data=f"chatsim:{opt['next']}:{marker}")])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💬 **{scene['character']}**\n━━━━━━━━━━━━━━━━━━━\n\n📱 *{scene['dialogue']}*",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("chatsim:"))
+async def process_chatsim_choice(callback: CallbackQuery) -> None:
+    """Processes player responses in the Chat Simulator."""
+    parts = callback.data.split(":")
+    next_key, is_correct = parts[1], parts[2] == "1"
+
+    if next_key.startswith("victory_"):
+        scen = CHAT_SCENARIOS[next_key]
+        await callback.message.edit_text(
+            f"🎉 **{scen['title']}**\n\n{scen['text']}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Заново", callback_data="start_game_chatsim")],
+                [InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
+    if not is_correct or next_key.startswith("fail_"):
+        scen = CHAT_SCENARIOS.get(next_key, {"title": "💀 Game Over", "text": "Ошибка в диалоге."})
+        await callback.message.edit_text(
+            f"❌ **{scen['title']}**\n\n{scen['text']}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Повторить", callback_data="start_game_chatsim")],
+                [InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
+    scene = CHAT_SCENARIOS.get(next_key, CHAT_SCENARIOS["start"])
+    btns = []
+    for opt in scene["options"]:
+        marker = "1" if opt["correct"] else "0"
+        btns.append([InlineKeyboardButton(text=opt["text"], callback_data=f"chatsim:{opt['next']}:{marker}")])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💬 **Собеседник: {scene['character']}**\n━━━━━━━━━━━━━━━━━━━\n\n✅ *{scene.get('feedback', 'Ответ принят.')}*\n\n📱 *{scene['dialogue']}*",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+# --- 9.3 London Adventure Quest ---
+@router.callback_query(F.data == "start_game_adventure")
+async def cb_start_adventure(callback: CallbackQuery) -> None:
+    """Starts the London Adventure Quest if premium is active."""
+    user_id = callback.from_user.id
+    db = load_db()
+    if not db.get(str(user_id), {}).get("is_premium", False):
+        await callback.message.edit_text(
+            "🔒 **Квест в Лондоне (Путешествие) доступен по Премиум-подписке!**\nСтоимость: **50 Telegram Stars (⭐)**.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⭐ Купить Премиум за 50 Звезд", callback_data="buy_premium_trigger")],
+                [InlineKeyboardButton(text="◀️ Назад к играм", callback_data="open_games_menu")]
+            ]),
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+
+    money, energy, rep = 40, 100, 10
+    scene = ADVENTURE_SCENARIOS["start"]
+    btns = []
+    for btn in scene["buttons"]:
+        cb = f"adv:{btn['next']}:{money + btn.get('money', 0)}:{energy + btn.get('energy', 0)}:{rep + btn.get('rep', 0)}"
+        btns.append([InlineKeyboardButton(text=btn["text"], callback_data=cb)])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💷 £{money} | ⚡ {energy}% | 🔥 Реп: {rep}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("adv:"))
+async def process_adventure_choice(callback: CallbackQuery) -> None:
+    """Processes choices in London Adventure Quest."""
+    parts = callback.data.split(":")
+    next_key, m, e, r = parts[1], int(parts[2]), int(parts[3]), int(parts[4])
+    scene = ADVENTURE_SCENARIOS.get(next_key, ADVENTURE_SCENARIOS["start"])
+
+    btns = []
+    for btn in scene.get("buttons", []):
+        cb = f"adv:{btn['next']}:{m + btn.get('money', 0)}:{e + btn.get('energy', 0)}:{r + btn.get('rep', 0)}"
+        btns.append([InlineKeyboardButton(text=btn["text"], callback_data=cb)])
+    btns.append([InlineKeyboardButton(text="◀️ К играм", callback_data="open_games_menu")])
+
+    await callback.message.edit_text(
+        f"💷 £{m} | ⚡ {e}% | 🔥 Реп: {r}\n━━━━━━━━━━━━━━━━━━━\n\n*{scene['title']}*\n\n{scene['text']}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+
+# ==============================================================================
+# SECTION 10: VOCABULARY LEARNING & QUIZ MODULES (A1 - C1)
 # ==============================================================================
 @router.message(F.text == "📚 Учить слова")
-async def entry_vocabulary_training(message: Message, state: FSMContext) -> None:
-    await message.answer(
-        "🔤 **Выбери языковой уровень:**",
-        parse_mode="Markdown",
-        reply_markup=build_levels_selection_keyboard()
-    )
+async def entry_vocab(message: Message, state: FSMContext) -> None:
+    """Initiates vocabulary level selection."""
+    await message.answer("🔤 **Выбери языковой уровень:**", parse_mode="Markdown", reply_markup=build_levels_selection_keyboard())
     await state.set_state(BotStates.selecting_vocabulary_level)
 
 @router.callback_query(F.data.startswith("setlevel_"), StateFilter(BotStates.selecting_vocabulary_level, BotStates.active_learning_session))
-async def process_vocabulary_level_selection(callback: CallbackQuery, state: FSMContext) -> None:
+async def set_vocab_level(callback: CallbackQuery, state: FSMContext) -> None:
+    """Sets the chosen vocabulary level, gating C1 behind Premium."""
     lvl = callback.data.split("_")[1]
     uid_str = str(callback.from_user.id)
-    
     if lvl == "c1":
-        database = load_db()
-        if not database.get(uid_str, {}).get("is_premium", False):
+        db = load_db()
+        if not db.get(uid_str, {}).get("is_premium", False):
             await callback.answer("⚠️ Уровень C1 доступен только по Премиум-подписке ⭐!", show_alert=True)
             return
-
-    database = load_db()
-    if uid_str in database:
-        database[uid_str]["level"] = lvl
-        save_db(database)
-
+    db = load_db()
+    if uid_str in db:
+        db[uid_str]["level"] = lvl
+        save_db(db)
     await state.update_data(active_vocab_level=lvl)
     await state.set_state(BotStates.active_learning_session)
     await callback.message.edit_text(f"✅ Уровень изменен на **{lvl.upper()}**.", parse_mode="Markdown")
-    await dispatch_random_vocabulary_card(callback.message, lvl, replace_message=True)
+    await dispatch_card(callback.message, lvl, replace=True)
     await callback.answer()
 
-async def dispatch_random_vocabulary_card(message: Message, level_code: str, replace_message: bool = False) -> None:
+async def dispatch_card(message: Message, level_code: str, replace: bool = False) -> None:
+    """Dispatches a random vocabulary learning card."""
     maps = {"a1": WORDS_A1, "a2": WORDS_A2, "b1": WORDS_B1, "b2": WORDS_B2, "c1": WORDS_C1}
-    pool = maps.get(level_code, WORDS_A1)
-    word = random.choice(pool)
-    
+    word = random.choice(maps.get(level_code, WORDS_A1))
     card = (
         f"📖 **Карточка ({level_code.upper()})**\n\n"
         f"🔤 **{html.quote(word.get('word', ''))}**\n"
@@ -700,12 +683,12 @@ async def dispatch_random_vocabulary_card(message: Message, level_code: str, rep
     )
     
     uid_str = str(message.chat.id)
-    database = load_db()
-    if uid_str in database:
-        database[uid_str]["words_learned"] = database[uid_str].get("words_learned", 0) + 1
-        save_db(database)
+    db = load_db()
+    if uid_str in db:
+        db[uid_str]["words_learned"] = db[uid_str].get("words_learned", 0) + 1
+        save_db(db)
 
-    if replace_message:
+    if replace:
         try:
             await message.edit_text(card, parse_mode="Markdown", reply_markup=build_learning_actions_keyboard())
         except Exception:
@@ -714,23 +697,25 @@ async def dispatch_random_vocabulary_card(message: Message, level_code: str, rep
         await message.answer(card, parse_mode="Markdown", reply_markup=build_learning_actions_keyboard())
 
 @router.callback_query(F.data == "action_next_word", StateFilter(BotStates.active_learning_session))
-async def process_next_word_button(callback: CallbackQuery, state: FSMContext) -> None:
+async def next_word(callback: CallbackQuery, state: FSMContext) -> None:
+    """Shows the next vocabulary word card."""
     data = await state.get_data()
-    lvl = data.get("active_vocab_level", "a1")
-    await dispatch_random_vocabulary_card(callback.message, lvl, replace_message=True)
+    await dispatch_card(callback.message, data.get("active_vocab_level", "a1"), replace=True)
     await callback.answer()
 
 @router.callback_query(F.data == "action_change_level")
-async def process_change_level_button(callback: CallbackQuery, state: FSMContext) -> None:
+async def change_level(callback: CallbackQuery, state: FSMContext) -> None:
+    """Allows changing vocabulary level during learning session."""
     await callback.message.edit_text("🔤 Выбери уровень:", parse_mode="Markdown", reply_markup=build_levels_selection_keyboard())
     await state.set_state(BotStates.selecting_vocabulary_level)
     await callback.answer()
 
 @router.message(F.text == "🎯 Режим тестов")
-async def entry_quiz_session(message: Message, state: FSMContext) -> None:
+async def entry_quiz(message: Message, state: FSMContext) -> None:
+    """Initiates an interactive multiple-choice quiz question."""
     uid_str = str(message.from_user.id)
-    database = load_db()
-    lvl = database.get(uid_str, {}).get("level", "a1")
+    db = load_db()
+    lvl = db.get(uid_str, {}).get("level", "a1")
     maps = {"a1": WORDS_A1, "a2": WORDS_A2, "b1": WORDS_B1, "b2": WORDS_B2, "c1": WORDS_C1}
     pool = maps.get(lvl, WORDS_A1)
     
@@ -745,19 +730,16 @@ async def entry_quiz_session(message: Message, state: FSMContext) -> None:
     btns = [[InlineKeyboardButton(text=opt["ru"], callback_data=f"quizanswer_{opt['ru']}")] for opt in options]
     btns.append([InlineKeyboardButton(text="❌ Выход", callback_data="action_main_menu")])
     
-    await message.answer(
-        f"🎯 **Тест ({lvl.upper()})**\n\nКак переводится: **{html.quote(correct['word'])}**?",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=btns)
-    )
+    await message.answer(f"🎯 **Тест ({lvl.upper()})**\n\nКак переводится: **{html.quote(correct['word'])}**?", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(inline_keyboard=btns))
 
 @router.callback_query(F.data.startswith("quizanswer_"), StateFilter(BotStates.quiz_question_active))
-async def evaluate_user_quiz_answer(callback: CallbackQuery, state: FSMContext) -> None:
+async def eval_quiz(callback: CallbackQuery, state: FSMContext) -> None:
+    """Evaluates user's quiz answer and awards scores."""
     chosen = callback.data.split("_", 1)[1]
     data = await state.get_data()
     correct = data.get("quiz_correct_ru")
     uid_str = str(callback.from_user.id)
-    database = load_db()
+    db = load_db()
     
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ Следующий", callback_data="action_next_quiz")],
@@ -765,18 +747,19 @@ async def evaluate_user_quiz_answer(callback: CallbackQuery, state: FSMContext) 
     ])
     
     if chosen == correct:
-        if uid_str in database:
-            database[uid_str]["correct_answers"] = database[uid_str].get("correct_answers", 0) + 1
-            database[uid_str]["quiz_score"] = database[uid_str].get("quiz_score", 0) + 15
-            save_db(database)
+        if uid_str in db:
+            db[uid_str]["correct_answers"] = db[uid_str].get("correct_answers", 0) + 1
+            db[uid_str]["quiz_score"] = db[uid_str].get("quiz_score", 0) + 15
+            save_db(db)
         await callback.message.edit_text("✅ **Верно! (+15 очков)** 🎉", parse_mode="Markdown", reply_markup=markup)
     else:
         await callback.message.edit_text(f"❌ **Ошибка.** Правильно: *{correct}*.", parse_mode="Markdown", reply_markup=markup)
     await callback.answer()
 
 @router.callback_query(F.data == "action_next_quiz")
-async def process_next_quiz_question(callback: CallbackQuery, state: FSMContext) -> None:
-    await entry_quiz_session(callback.message, state)
+async def next_quiz(callback: CallbackQuery, state: FSMContext) -> None:
+    """Proceeds to the next quiz question."""
+    await entry_quiz(callback.message, state)
     try:
         await callback.message.delete()
     except Exception:
@@ -785,37 +768,38 @@ async def process_next_quiz_question(callback: CallbackQuery, state: FSMContext)
 
 
 # ==============================================================================
-# НАСТРОЙКИ И ОПЛАТА (TELEGRAM STARS)
+# SECTION 11: SETTINGS & TELEGRAM STARS PAYMENTS
 # ==============================================================================
 @router.message(F.text == "⚙️ Настройки")
-async def handle_settings_menu_request(message: Message) -> None:
+async def settings_menu(message: Message) -> None:
+    """Opens user settings menu."""
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Сбросить статистику", callback_data="settings_reset_stats")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")]
     ])
-    await message.answer("⚙️ **Настройки:**", parse_mode="Markdown", reply_markup=markup)
+    await message.answer("⚙️ **Настройки бота:**", parse_mode="Markdown", reply_markup=markup)
 
 @router.callback_query(F.data == "settings_reset_stats")
-async def process_reset_user_statistics(callback: CallbackQuery) -> None:
+async def reset_stats(callback: CallbackQuery) -> None:
+    """Resets user statistics."""
     uid_str = str(callback.from_user.id)
-    database = load_db()
-    if uid_str in database:
-        database[uid_str]["words_learned"] = 0
-        database[uid_str]["correct_answers"] = 0
-        database[uid_str]["quiz_score"] = 0
-        save_db(database)
+    db = load_db()
+    if uid_str in db:
+        db[uid_str]["words_learned"] = 0
+        db[uid_str]["correct_answers"] = 0
+        db[uid_str]["quiz_score"] = 0
+        save_db(db)
     await callback.answer("🔄 Статистика сброшена!", show_alert=True)
-    await callback.message.edit_text("✅ Данные обнулены.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")]
-    ]))
+    await callback.message.edit_text("✅ Твоя статистика обнулена.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🏠 Главное меню", callback_data="action_main_menu")]]))
 
 @router.message(Command("buy"))
 @router.message(F.text.in_(["⭐ Купить Премиум", "buy_premium_trigger"]))
-async def handle_buy_premium_request(message: Message) -> None:
+async def buy_premium(message: Message) -> None:
+    """Sends Telegram Stars invoice for Premium subscription."""
     prices = [LabeledPrice(label="Премиум доступ ко всем играм и C1", amount=50)]
     await message.answer_invoice(
         title="⭐ Премиум-подписка",
-        description="Открывает детектив, чат-симулятор, квест в Лондоне и уровень C1!",
+        description="Открывает детектив, чат-симулятор, квест в Лондоне (путешествие) и уровень C1!",
         prices=prices,
         payload="premium_sub_payload",
         currency="XTR",
@@ -823,46 +807,67 @@ async def handle_buy_premium_request(message: Message) -> None:
     )
 
 @router.pre_checkout_query()
-async def process_pre_checkout_validation(pre_checkout_query: PreCheckoutQuery) -> None:
-    await pre_checkout_query.answer(ok=True)
+async def pre_checkout(query: PreCheckoutQuery) -> None:
+    """Validates pre-checkout queries for Telegram Stars."""
+    await query.answer(ok=True)
 
 @router.message(F.successful_payment)
-async def process_successful_stars_payment(message: Message) -> None:
+async def successful_payment(message: Message) -> None:
+    """Activates premium status upon successful payment."""
     uid_str = str(message.from_user.id)
-    database = load_db()
-    if uid_str in database:
-        database[uid_str]["is_premium"] = True
-        save_db(database)
+    db = load_db()
+    if uid_str in db:
+        db[uid_str]["is_premium"] = True
+        save_db(db)
     
     is_admin = message.from_user.id == ADMIN_TELEGRAM_ID
-    await message.answer(
-        "🎉 **Оплата прошла успешно! Премиум активирован!** ⭐\nВсе игры и уровень C1 теперь разблокированы.",
-        parse_mode="Markdown",
-        reply_markup=build_main_menu_keyboard(is_administrator=is_admin)
-    )
+    await message.answer("🎉 **Оплата прошла успешно! Премиум активирован!** ⭐\nВсе игры, квесты и уровень C1 теперь полностью разблокированы.", parse_mode="Markdown", reply_markup=build_main_menu_keyboard(is_admin))
 
 
 # ==============================================================================
-# ЗАПУСК БОТА
+# SECTION 12: ADMINISTRATOR MANAGEMENT PANEL
+# ==============================================================================
+@router.message(F.text == "👑 Панель администратора")
+async def admin_panel_handler(message: Message) -> None:
+    """Displays admin analytics and server status."""
+    if message.from_user.id != ADMIN_TELEGRAM_ID:
+        await message.answer("⛔ У тебя нет доступа к этой панели.")
+        return
+    db = load_db()
+    total_users = len(db)
+    premium_users = sum(1 for u in db.values() if u.get("is_premium"))
+    
+    text = (
+        f"👑 **Панель администратора:**\n\n"
+        f"👥 Всего пользователей в базе: `{total_users}`\n"
+        f"💎 Премиум пользователей: `{premium_users}`\n"
+        f"🟢 Статус сервера: `Работает 24/7 (Render Keep-Alive)`"
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+
+# ==============================================================================
+# SECTION 13: MAIN POLLING & BOT EXECUTION ENTRYPOINT
 # ==============================================================================
 async def main() -> None:
-    logger.info("Запуск бота...")
+    """Main asynchronous entrypoint for running the aiogram polling dispatcher."""
+    logger.info("Starting LanguageBotCore polling engine...")
     bot = Bot(token=BOT_TOKEN)
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-    
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
     
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Webhook successfully dropped, initiating start_polling()...")
         await dp.start_polling(bot)
     except TelegramAPIError as e:
-        logger.critical(f"Ошибка API: {e}")
+        logger.critical(f"Critical Telegram API error encountered: {e}")
     finally:
         await bot.session.close()
+        logger.info("Bot session closed gracefully.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен.")
+        logger.info("Bot execution terminated by user or system signal.")
