@@ -19,6 +19,27 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
+
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+# Заглушка веб-сервера для Render, чтобы сервис не падал по таймауту портов
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is active!")
+
+def run_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
+
+# Запускаем веб-сервер в фоновом режиме, чтобы Render видел открытый порт
+threading.Thread(target=run_server, daemon=True).start()
+
+# --- Дальше идет твой стандартный код aiogram и запуска polling ---
     Message,
     CallbackQuery,
     PreCheckoutQuery,
